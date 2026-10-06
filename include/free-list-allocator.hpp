@@ -1,5 +1,6 @@
 #pragma once
 
+#include "memory-pool.hpp"
 #include <cstddef>
 template <typename T> class FreeListAllocator {
 public:
@@ -15,4 +16,7 @@ public:
   void deallocate(T *ptr, std::size_t n);
 
 private:
+  MemoryPool *memory_pool_;
+
+  template <typename> friend class FreeListAllocator;
 };

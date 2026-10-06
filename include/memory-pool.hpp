@@ -15,7 +15,8 @@ public:
 
   MemoryPool();
 
-  template <typename T> void *reserve();
+  template <typename T> T *reserve();
+  void insert_back(void *ptr);
 
   ~MemoryPool();
 

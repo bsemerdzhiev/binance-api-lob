@@ -35,7 +35,7 @@ void *MemoryPool::pop_ticket() {
   return alloc_location;
 }
 
-template <typename T> void *MemoryPool::reserve() {
+template <typename T> T *MemoryPool::reserve() {
   if (buffer_ == nullptr) {
     constexpr std::size_t block_size =
         std::max(sizeof(FreeListNode), sizeof(T));
@@ -53,7 +53,15 @@ template <typename T> void *MemoryPool::reserve() {
     create_tickets<T>();
   }
 
-  return pop_ticket();
+  void *new_address = pop_ticket();
+
+  std::destroy_at(static_cast<FreeListNode *>(new_address));
+
+  return new_address;
+}
+
+void MemoryPool::insert_back(void *ptr) {
+  head_ = std::construct_at(static_cast<FreeListNode *>(ptr), head_);
 }
 
 MemoryPool::~MemoryPool() {
