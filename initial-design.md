@@ -3,16 +3,16 @@
 When handling an update, the first step is to get the order book that corresponds to a symbol. In this solution, a vector will be used to store the order books for all symbols, and a mapping from a symbol's string to an integer is done to get the corresponding index in it. 
 
 Following the assumption that a symbol's book can contain from 1000 to 2000 different levels, different solutions exist for keeping these levels.
-Initially, I checked the constraints on the price levels defined from the binance API, including the tickSize, in hopes that the price levels would be dense. 
+Initially, I checked the constraints on the price levels defined from the Binance API, including the tickSize, in hopes that the price levels would be dense. 
 However, the docs state that the price levels range depends on the symbol, and the example it provides shows sparse ranges:
-`
+```
 {
   "filterType": "PRICE_FILTER",
   "minPrice": "0.01000000",
   "maxPrice": "1000000.00000000",
   "tickSize": "0.01000000"
 }
-`
+```
 This led me to the conclusion that the ranges can be quite sparse. Therefore, a container like a vector that has great cache locality seems like a less desirable choice, given the memory size allocation needed for each symbol. 
 
 A map (implemented with a Red Black Tree in the STL), could be a good choice, even though it is implemented with pointers in the STL. The issue steming from the dynamic allocations during execution could be mitigated by using a custom memory pool (implemented with [free lists](https://en.wikipedia.org/wiki/Free_list)). A map would also provide an easy access to the best bid and best ask in complexity O(1). An alternative choice would be to use a Hash Table(unordered_map), but this would require the use of an additional data structure to retrieve the best bid and best ask (for example a Heap(priority_queue)) which then leads to other potential problems. 
@@ -34,7 +34,7 @@ One drawback of the map is the need for dynamic memory allocations that happen d
 
 ## Trade-offs and Assumptions made during the design process
 
-The key assumptions I made before implementations:
+### The key assumptions I made before implementations:
 
 1. The price levels are sparse.
 2. The symbols are known beforehand.
@@ -42,8 +42,10 @@ The key assumptions I made before implementations:
 4. The tickSisze, minPrice, stepSize and minQuantity are provided to us for all symbols at initialization.
 5. The tickSize and stepSize are assumed to be in the form 0.{00...00}1 = 10^-K
 
+### Trade-offs
+
 A trade off I am making is choosing worse locality in favor of being able to handle sparse ranges. A contiguous container such as a vector would have been a 
 great choice for storing the different levels in an order book, however the sparse range for the price levels make this much less desirable, given that our program
-should be able to have ~1000-2000 DIFFERENT symbols. Following the example provided by the binance API above, the LOB for a symbol might have at least 10^6/10^{-2} levels, which turns out to be 10^8 indeces. Since a price level requires 8 bytes for storing the quantity, the whole book for a symbol needs at least 8*10^8 bytes -> 0.8GB in total. Multiplying this by the total amount of different symbols, we get 2000*0.8GB = 1.6TB in total, which is physically infeasible for the average computer.
+should be able to have ~1000-2000 DIFFERENT symbols. Following the example provided by the Binance API above, the LOB for a symbol might have at least $\frac{10^6}{10^{-2}}=10^8$ levels, which turns out to be 10^8 indeces. Since a price level requires 8 bytes for storing the quantity, the whole book for a symbol needs at least $8 \cdot 10^8$ bytes -> 0.8GB in total. Multiplying this by the total amount of different symbols, we get $2000 \cdot 0.8GB = 1.6TB$ in total, which is physically infeasible for the average computer.
 
 Another alternative solution for storing the prices on a level, could have been to store the price level and corresponding volume as a pair, and insert it into a vector that stores all the <price, volume> pairs for this symbol. This corresponds to a O(n) worst case insertion, look-up, and deletion, but has great cache locality and uses O(P) memory, where P stands for the amount of levels for this symbol. A small improvement is to keep the pairs sorted by key, resulting in O(log(n)) look up, and O(n) insertion and deletion.
