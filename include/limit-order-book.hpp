@@ -9,6 +9,7 @@
 
 using Price = uint64_t;
 using Volume = uint64_t;
+
 using AllocType = FreeListAllocator<std::pair<const Price, Volume>>;
 using Map = std::map<Price, Volume, std::less<Price>, AllocType>;
 

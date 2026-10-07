@@ -14,7 +14,7 @@ SymbolRepo::SymbolRepo() {
 
 SymbolId SymbolRepo::get_symbol_id(SymbolView symbol) const {
   // TODO: maybe change to heterogenous look-ups, as now we are creating a new
-  // string
+  // string when searching
   auto it = symbol_ids_.find(Symbol{symbol});
 
   if (it == symbol_ids_.end()) {

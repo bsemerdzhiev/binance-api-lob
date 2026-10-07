@@ -34,7 +34,11 @@ public:
 
   const SymbolInfo &get_symbol_info(SymbolId symbol_id) const;
 
+  std::size_t size() const { return symbol_ids_.size(); }
+
 private:
   std::unordered_map<Symbol, SymbolId> symbol_ids_;
   std::vector<SymbolInfo> symbol_infos_;
 };
+
+inline SymbolRepo symbol_repo;

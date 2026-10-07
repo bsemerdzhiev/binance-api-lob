@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstddef>
-#include <cstdint>
 #include <new>
 
 struct FreeListNode {
@@ -11,9 +10,7 @@ struct FreeListNode {
 
 class MemoryPool {
 public:
-  static constexpr int32_t ARENA_SIZE = 4096;
-
-  MemoryPool();
+  MemoryPool(std::size_t arena_size);
 
   template <typename T> T *reserve();
   void insert_back(void *ptr);
@@ -27,6 +24,7 @@ private:
   void *pop_ticket();
 
   FreeListNode *head_;
+  std::size_t arena_size_;
 
   std::byte *buffer_;
   std::size_t buffer_size_;
