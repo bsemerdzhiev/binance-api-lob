@@ -32,3 +32,5 @@ private:
   std::size_t buffer_size_;
   std::align_val_t align_val_;
 };
+
+#include "memory-pool.tpp"

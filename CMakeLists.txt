@@ -7,7 +7,7 @@ set (CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
-add_library(LOBLib STATIC "src/free-list-allocator.cpp" "src/memory-pool.cpp")
+add_library(LOBLib STATIC "src/limit-order-book.cpp")
 
 target_include_directories(LOBLib PUBLIC "include/")
 

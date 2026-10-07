@@ -6,7 +6,7 @@ template <typename T> class FreeListAllocator {
 public:
   using value_type = T;
 
-  FreeListAllocator() noexcept = default;
+  explicit FreeListAllocator(MemoryPool &pool) noexcept;
 
   template <typename U>
   constexpr FreeListAllocator(const FreeListAllocator<U> &rhs) noexcept;
@@ -20,3 +20,5 @@ private:
 
   template <typename> friend class FreeListAllocator;
 };
+
+#include "free-list-allocator.tpp"
