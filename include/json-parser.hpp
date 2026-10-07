@@ -17,6 +17,8 @@ enum class ParseState : uint8_t {
   ParseType = 3,
 };
 
+uint64_t parse_string_decimal(std::string_view cur_string,
+                              const SymbolIntegerScale scale);
 void parse_snapshot(const Symbol &symbol, std::string_view message);
 void parse_update(std::string_view message);
 } // namespace JsonParser

@@ -6,7 +6,8 @@ SymbolRepo::SymbolRepo() {
 
   for (const auto &[symbol, price_scale, volume_scale] : MOCK_ENTRIES) {
     symbol_ids_.emplace(symbol, ids);
-    symbol_infos_.push_back(SymbolInfo{price_scale, volume_scale});
+    symbol_infos_.push_back(
+        SymbolInfo{.price_scale = price_scale, .volume_scale = volume_scale});
 
     ids++;
   }

@@ -29,6 +29,10 @@ public:
   LimitOrderBook(MemoryPool *memory_pool);
   template <Side ORDER_SIDE> void modify_level(const Order &order);
 
+  std::vector<Order> get_all_levels(const Side side) const;
+
 private:
   Map bids_, asks_;
 };
+
+#include "limit-order-book.tpp"

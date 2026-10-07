@@ -4,8 +4,8 @@
 #include "symbol-repo.hpp"
 #include <string_view>
 
-uint64_t parse_string_decimal(std::string_view cur_string,
-                              const SymbolIntegerScale scale) {
+uint64_t JsonParser::parse_string_decimal(std::string_view cur_string,
+                                          const SymbolIntegerScale scale) {
   uint64_t final_number = 0;
 
   int8_t dec_scale = 0;
@@ -16,6 +16,9 @@ uint64_t parse_string_decimal(std::string_view cur_string,
       dec_scale = 1;
       continue;
     }
+    if (remaining_scale == 0) {
+      break;
+    }
 
     remaining_scale -= dec_scale;
 
@@ -23,6 +26,7 @@ uint64_t parse_string_decimal(std::string_view cur_string,
 
     final_number += cur_char - '0';
   }
+  // std::cout << int32_t{remaining_scale} << "\n";
 
   for (int32_t i{0}; i < remaining_scale; i++) {
     final_number *= 10;
@@ -55,6 +59,9 @@ void JsonParser::parse_snapshot(const Symbol &symbol,
     std::string_view cur_string =
         message.substr(token_start + 1, token_end - token_start - 1);
 
+    // std::cerr << token_start << " " << token_end << " " << cur_string <<
+    // "\n";
+
     if (cur_string == "asks") {
       order_side = Side::SELL;
     } else if (cur_string == "bids") {
@@ -78,6 +85,7 @@ void JsonParser::parse_snapshot(const Symbol &symbol,
 
     msg_index = token_end + 1;
   }
+  // std::cerr << "exited\n";
 }
 
 // following the API description listed here
