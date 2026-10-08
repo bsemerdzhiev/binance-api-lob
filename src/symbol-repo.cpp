@@ -16,6 +16,8 @@ SymbolRepo::SymbolRepo() {
 SymbolId SymbolRepo::get_symbol_id(SymbolView symbol) const {
   // TODO: maybe change to heterogenous look-ups, as now we are creating a new
   // string when searching
+  // follow this (https://www.cppstories.com/2021/heterogeneous-access-cpp20/)
+
   auto it = symbol_ids_.find(Symbol{symbol});
 
   if (it == symbol_ids_.end()) {

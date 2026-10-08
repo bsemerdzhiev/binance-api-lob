@@ -26,6 +26,12 @@ void LimitOrderBookHandler<Alloc>::update_symbol(const SymbolId symbol_id,
   }
 }
 
+template <typename Alloc> void LimitOrderBookHandler<Alloc>::warm_up_insert() {
+  for (LimitOrderBook<Alloc> &order_book : order_books_) {
+    order_book.warm_up();
+  }
+}
+
 template <typename Alloc>
 std::vector<Order>
 LimitOrderBookHandler<Alloc>::get_all_levels(const SymbolId symbol_id,
@@ -40,4 +46,22 @@ LimitOrderBookHandler<Alloc>::get_all_levels(const SymbolId symbol_id,
 template <typename Alloc> void LimitOrderBookHandler<Alloc>::reset() {
   order_books_.clear();
   order_books_.resize(symbol_repo.size(), LimitOrderBook{alloc_obj_});
+}
+
+template <typename Alloc>
+std::optional<Price>
+LimitOrderBookHandler<Alloc>::get_best_bid(const SymbolId symbol_id) const {
+  assert(symbol_id < order_books_.size());
+
+  const LimitOrderBook<Alloc> &order_book = order_books_[symbol_id];
+  return order_book.get_best_bid();
+}
+
+template <typename Alloc>
+std::optional<Price>
+LimitOrderBookHandler<Alloc>::get_best_ask(const SymbolId symbol_id) const {
+  assert(symbol_id < order_books_.size());
+
+  const LimitOrderBook<Alloc> &order_book = order_books_[symbol_id];
+  return order_book.get_best_ask();
 }

@@ -14,6 +14,8 @@ add_subdirectory("benchmarks")
 
 add_library(LOBLib STATIC "src/json-parser.cpp" "src/symbol-repo.cpp" "src/memory-pool.cpp")
 
+target_compile_options(LOBLib PRIVATE -fno-omit-frame-pointer)
+
 target_include_directories(LOBLib PUBLIC "include/")
 
 add_executable(MainApp "src/main.cpp")

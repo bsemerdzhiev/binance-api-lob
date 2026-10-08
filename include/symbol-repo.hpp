@@ -21,7 +21,7 @@ struct SymbolInfo {
 
 inline constexpr std::array MOCK_ENTRIES = {
     std::tuple{SymbolView{"AB"}, SymbolIntegerScale{4}, SymbolIntegerScale{0}},
-    std::tuple{SymbolView{"AC"}, SymbolIntegerScale{2}, SymbolIntegerScale{0}},
+    std::tuple{SymbolView{"AC"}, SymbolIntegerScale{2}, SymbolIntegerScale{1}},
     std::tuple{SymbolView{"BNBBTC"}, SymbolIntegerScale{4},
                SymbolIntegerScale{1}},
 };

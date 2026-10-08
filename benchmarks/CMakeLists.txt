@@ -12,4 +12,6 @@ FetchContent_MakeAvailable(googlebenchmark)
 
 add_executable(lob_benchmarks "lob-benchmark.cpp")
 
+target_compile_options(lob_benchmarks PRIVATE -fno-omit-frame-pointer)
+
 target_link_libraries(lob_benchmarks PRIVATE LOBLib benchmark::benchmark)

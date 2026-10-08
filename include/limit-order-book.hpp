@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,11 @@ public:
   template <Side ORDER_SIDE> void modify_level(const Order &order);
 
   std::vector<Order> get_all_levels(const Side side) const;
+
+  std::optional<Price> get_best_bid() const;
+  std::optional<Price> get_best_ask() const;
+
+  void warm_up();
 
 private:
   Map bids_, asks_;

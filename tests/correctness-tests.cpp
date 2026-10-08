@@ -1,3 +1,4 @@
+#include "catch2/matchers/catch_matchers.hpp"
 #include "json-parser.hpp"
 #include "limit-order-book-handler.hpp"
 #include "limit-order-book.hpp"
@@ -5,7 +6,6 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <catch2/matchers/catch_matchers_vector.hpp>
-#include <iostream>
 
 using Catch::Matchers::UnorderedEquals;
 
@@ -44,6 +44,9 @@ TEST_CASE("Document Example Test") {
   REQUIRE_THAT(snapshot_bids, UnorderedEquals(bids_expected));
   REQUIRE_THAT(snapshot_asks, UnorderedEquals(asks_expected));
 
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 24);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 24);
+
   std::string updates[] = {
       R"({ "e": "depthUpdate", "s": "BNBBTC", "b": [ ["0.0024","10"] ], "a":
       [ ["0.0026","100"] ] })",
@@ -81,6 +84,9 @@ TEST_CASE("Document Example Test") {
 
   REQUIRE_THAT(current_bids, UnorderedEquals(bids_expected));
   REQUIRE_THAT(current_asks, UnorderedEquals(asks_expected));
+
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 22);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 26);
 }
 
 /*
@@ -129,13 +135,11 @@ TEST_CASE("LOB Correctness") {
   REQUIRE_THAT(order_book_handler.get_all_levels(symbol_id, Side::BUY),
                UnorderedEquals(expected_bids));
 
-  for (const auto &[price, volume] :
-       order_book_handler.get_all_levels(symbol_id, Side::SELL)) {
-    std::cout << price << " " << volume << "\n";
-  }
-
   REQUIRE_THAT(order_book_handler.get_all_levels(symbol_id, Side::SELL),
                UnorderedEquals(expected_asks));
+
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 24);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 24);
 
   // ---------------------------------------------------------------------------
   // Modify existing levels
@@ -167,6 +171,9 @@ TEST_CASE("LOB Correctness") {
 
   REQUIRE_THAT(order_book_handler.get_all_levels(symbol_id, Side::SELL),
                UnorderedEquals(expected_asks));
+
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 24);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 24);
 
   // ---------------------------------------------------------------------------
   // Insert new levels
@@ -201,6 +208,9 @@ TEST_CASE("LOB Correctness") {
   REQUIRE_THAT(order_book_handler.get_all_levels(symbol_id, Side::SELL),
                UnorderedEquals(expected_asks));
 
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 25);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 24);
+
   // ---------------------------------------------------------------------------
   // Delete existing levels using volume 0
   // ---------------------------------------------------------------------------
@@ -231,6 +241,9 @@ TEST_CASE("LOB Correctness") {
 
   REQUIRE_THAT(order_book_handler.get_all_levels(symbol_id, Side::SELL),
                UnorderedEquals(expected_asks));
+
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 25);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 24);
 
   // ---------------------------------------------------------------------------
   // Deleting a nonexistent level should be harmless
@@ -289,6 +302,9 @@ TEST_CASE("LOB Correctness") {
 
   REQUIRE_THAT(order_book_handler.get_all_levels(symbol_id, Side::SELL),
                UnorderedEquals(expected_asks));
+
+  REQUIRE(order_book_handler.get_best_bid(symbol_id) == 25);
+  REQUIRE(order_book_handler.get_best_ask(symbol_id) == 26);
 }
 
 TEST_CASE("Decimal Parsing") {
