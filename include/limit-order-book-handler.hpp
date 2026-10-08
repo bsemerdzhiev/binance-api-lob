@@ -18,6 +18,12 @@ public:
 
   void reset();
 
+  // needed in order to create the free list nodes inside the custom allocator
+  void warm_up_insert();
+
+  std::optional<Price> get_best_bid(const SymbolId symbol_id) const;
+  std::optional<Price> get_best_ask(const SymbolId symbol_id) const;
+
 private:
   //                                              10M allocations
   static inline constexpr std::size_t ARENA_SIZE = 10 * 1000 * 1000;

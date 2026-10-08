@@ -1,4 +1,5 @@
 #include "limit-order-book.hpp"
+#include <optional>
 
 template <typename Alloc>
 template <Side ORDER_SIDE>
@@ -34,4 +35,30 @@ std::vector<Order> LimitOrderBook<T>::get_all_levels(const Side side) const {
   } else {
     return std::vector<Order>(asks_.begin(), asks_.end());
   }
+}
+
+template <typename T> void LimitOrderBook<T>::warm_up() {
+  bids_.try_emplace(0, 0);
+  bids_.erase(0);
+
+  asks_.try_emplace(0, 0);
+  asks_.erase(0);
+}
+
+template <typename T>
+std::optional<Price> LimitOrderBook<T>::get_best_bid() const {
+  if (bids_.empty()) {
+    return std::nullopt;
+  }
+
+  return bids_.rbegin()->first;
+}
+
+template <typename T>
+std::optional<Price> LimitOrderBook<T>::get_best_ask() const {
+  if (asks_.empty()) {
+    return std::nullopt;
+  }
+
+  return asks_.begin()->first;
 }
