@@ -11,9 +11,12 @@ public:
   template <typename U>
   constexpr FreeListAllocator(const FreeListAllocator<U> &rhs) noexcept;
 
-  T *allocate(std::size_t n);
+  T *allocate(std::size_t n) noexcept;
 
-  void deallocate(T *ptr, std::size_t n);
+  void deallocate(T *ptr, std::size_t n) noexcept;
+
+  template <typename U>
+  bool operator==(const FreeListAllocator<U> &rhs) const noexcept;
 
 private:
   MemoryPool *memory_pool_;
