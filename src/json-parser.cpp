@@ -16,7 +16,7 @@ uint64_t JsonParser::parse_string_decimal(std::string_view cur_string,
       dec_scale = 1;
       continue;
     }
-    if (remaining_scale == 0) {
+    if (remaining_scale == 0 && dec_scale == 1) {
       break;
     }
 

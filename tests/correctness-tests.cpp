@@ -302,4 +302,6 @@ TEST_CASE("Decimal Parsing") {
   REQUIRE(JsonParser::parse_string_decimal("0", 1) == 0);
 
   REQUIRE(JsonParser::parse_string_decimal("1.2345", 4) == 12345);
+
+  REQUIRE(JsonParser::parse_string_decimal("123.2345", 0) == 123);
 }
