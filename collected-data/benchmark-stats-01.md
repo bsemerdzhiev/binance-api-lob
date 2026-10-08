@@ -147,6 +147,7 @@ borislav@borislav ~/Documents/asymptota-lob/build perf record -o perf-custom.dat
 ```
 
 and 
+
 ```
 borislav@borislav ~/Documents/asymptota-lob/build perf script -i perf-custom.data | stackcollapse-perf.pl | \
 flamegraph.pl --width 1800 --height 14 --fontsize 10 --minwidth 0.5 \
@@ -155,3 +156,5 @@ flamegraph.pl --width 1800 --height 14 --fontsize 10 --minwidth 0.5 \
 
 reports that 83% of the samples from update_symbol() is spent in .find() and .lower_bound() executed for the corresponding bids/asks map. This suggests that 
 the bottleneck of this implementation is mainly the algorithm itself, not the implementation, as lower_bound() and find() are the very primitives needed to insert an element and check if its already present.
+
+![Image](./perf-custom.svg)

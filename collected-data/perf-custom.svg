@@ -1,0 +1,914 @@
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" width="1800" height="396" onload="init(evt)" viewBox="0 0 1800 396" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<!-- Flame graph stack visualization. See https://github.com/brendangregg/FlameGraph for latest version, and http://www.brendangregg.com/flamegraphs.html for examples. -->
+<!-- NOTES:  -->
+<defs>
+	<linearGradient id="background" y1="0" y2="1" x1="0" x2="0" >
+		<stop stop-color="#eeeeee" offset="5%" />
+		<stop stop-color="#eeeeb0" offset="95%" />
+	</linearGradient>
+</defs>
+<style type="text/css">
+	text { font-family:Verdana; font-size:10px; fill:rgb(0,0,0); }
+	#search, #ignorecase { opacity:0.1; cursor:pointer; }
+	#search:hover, #search.show, #ignorecase:hover, #ignorecase.show { opacity:1; }
+	#subtitle { text-anchor:middle; font-color:rgb(160,160,160); }
+	#title { text-anchor:middle; font-size:15px}
+	#unzoom { cursor:pointer; }
+	#frames > *:hover { stroke:black; stroke-width:0.5; cursor:pointer; }
+	.hide { display:none; }
+	.parent { opacity:0.5; }
+</style>
+<script type="text/ecmascript">
+<![CDATA[
+	"use strict";
+	var details, searchbtn, unzoombtn, matchedtxt, svg, searching, currentSearchTerm, ignorecase, ignorecaseBtn;
+	function init(evt) {
+		details = document.getElementById("details").firstChild;
+		searchbtn = document.getElementById("search");
+		ignorecaseBtn = document.getElementById("ignorecase");
+		unzoombtn = document.getElementById("unzoom");
+		matchedtxt = document.getElementById("matched");
+		svg = document.getElementsByTagName("svg")[0];
+		searching = 0;
+		currentSearchTerm = null;
+
+		// use GET parameters to restore a flamegraphs state.
+		var params = get_params();
+		if (params.x && params.y)
+			zoom(find_group(document.querySelector('[x="' + params.x + '"][y="' + params.y + '"]')));
+                if (params.s) search(params.s);
+	}
+
+	// event listeners
+	window.addEventListener("click", function(e) {
+		var target = find_group(e.target);
+		if (target) {
+			if (target.nodeName == "a") {
+				if (e.ctrlKey === false) return;
+				e.preventDefault();
+			}
+			if (target.classList.contains("parent")) unzoom(true);
+			zoom(target);
+			if (!document.querySelector('.parent')) {
+				// we have basically done a clearzoom so clear the url
+				var params = get_params();
+				if (params.x) delete params.x;
+				if (params.y) delete params.y;
+				history.replaceState(null, null, parse_params(params));
+				unzoombtn.classList.add("hide");
+				return;
+			}
+
+			// set parameters for zoom state
+			var el = target.querySelector("rect");
+			if (el && el.attributes && el.attributes.y && el.attributes._orig_x) {
+				var params = get_params()
+				params.x = el.attributes._orig_x.value;
+				params.y = el.attributes.y.value;
+				history.replaceState(null, null, parse_params(params));
+			}
+		}
+		else if (e.target.id == "unzoom") clearzoom();
+		else if (e.target.id == "search") search_prompt();
+		else if (e.target.id == "ignorecase") toggle_ignorecase();
+	}, false)
+
+	// mouse-over for info
+	// show
+	window.addEventListener("mouseover", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = "Function: " + g_to_text(target);
+	}, false)
+
+	// clear
+	window.addEventListener("mouseout", function(e) {
+		var target = find_group(e.target);
+		if (target) details.nodeValue = ' ';
+	}, false)
+
+	// ctrl-F for search
+	// ctrl-I to toggle case-sensitive search
+	window.addEventListener("keydown",function (e) {
+		if (e.keyCode === 114 || (e.ctrlKey && e.keyCode === 70)) {
+			e.preventDefault();
+			search_prompt();
+		}
+		else if (e.ctrlKey && e.keyCode === 73) {
+			e.preventDefault();
+			toggle_ignorecase();
+		}
+	}, false)
+
+	// functions
+	function get_params() {
+		var params = {};
+		var paramsarr = window.location.search.substr(1).split('&');
+		for (var i = 0; i < paramsarr.length; ++i) {
+			var tmp = paramsarr[i].split("=");
+			if (!tmp[0] || !tmp[1]) continue;
+			params[tmp[0]]  = decodeURIComponent(tmp[1]);
+		}
+		return params;
+	}
+	function parse_params(params) {
+		var uri = "?";
+		for (var key in params) {
+			uri += key + '=' + encodeURIComponent(params[key]) + '&';
+		}
+		if (uri.slice(-1) == "&")
+			uri = uri.substring(0, uri.length - 1);
+		if (uri == '?')
+			uri = window.location.href.split('?')[0];
+		return uri;
+	}
+	function find_child(node, selector) {
+		var children = node.querySelectorAll(selector);
+		if (children.length) return children[0];
+	}
+	function find_group(node) {
+		var parent = node.parentElement;
+		if (!parent) return;
+		if (parent.id == "frames") return node;
+		return find_group(parent);
+	}
+	function orig_save(e, attr, val) {
+		if (e.attributes["_orig_" + attr] != undefined) return;
+		if (e.attributes[attr] == undefined) return;
+		if (val == undefined) val = e.attributes[attr].value;
+		e.setAttribute("_orig_" + attr, val);
+	}
+	function orig_load(e, attr) {
+		if (e.attributes["_orig_"+attr] == undefined) return;
+		e.attributes[attr].value = e.attributes["_orig_" + attr].value;
+		e.removeAttribute("_orig_"+attr);
+	}
+	function g_to_text(e) {
+		var text = find_child(e, "title").firstChild.nodeValue;
+		return (text)
+	}
+	function g_to_func(e) {
+		var func = g_to_text(e);
+		// if there's any manipulation we want to do to the function
+		// name before it's searched, do it here before returning.
+		return (func);
+	}
+	function update_text(e) {
+		var r = find_child(e, "rect");
+		var t = find_child(e, "text");
+		var w = parseFloat(r.attributes.width.value) -3;
+		var txt = find_child(e, "title").textContent.replace(/\([^(]*\)$/,"");
+		t.attributes.x.value = parseFloat(r.attributes.x.value) + 3;
+
+		// Smaller than this size won't fit anything
+		if (w < 2 * 10 * 0.59) {
+			t.textContent = "";
+			return;
+		}
+
+		t.textContent = txt;
+		var sl = t.getSubStringLength(0, txt.length);
+		// check if only whitespace or if we can fit the entire string into width w
+		if (/^ *$/.test(txt) || sl < w)
+			return;
+
+		// this isn't perfect, but gives a good starting point
+		// and avoids calling getSubStringLength too often
+		var start = Math.floor((w/sl) * txt.length);
+		for (var x = start; x > 0; x = x-2) {
+			if (t.getSubStringLength(0, x + 2) <= w) {
+				t.textContent = txt.substring(0, x) + "..";
+				return;
+			}
+		}
+		t.textContent = "";
+	}
+
+	// zoom
+	function zoom_reset(e) {
+		if (e.attributes != undefined) {
+			orig_load(e, "x");
+			orig_load(e, "width");
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_reset(c[i]);
+		}
+	}
+	function zoom_child(e, x, ratio) {
+		if (e.attributes != undefined) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = (parseFloat(e.attributes.x.value) - x - 10) * ratio + 10;
+				if (e.tagName == "text")
+					e.attributes.x.value = find_child(e.parentNode, "rect[x]").attributes.x.value + 3;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseFloat(e.attributes.width.value) * ratio;
+			}
+		}
+
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_child(c[i], x - 10, ratio);
+		}
+	}
+	function zoom_parent(e) {
+		if (e.attributes) {
+			if (e.attributes.x != undefined) {
+				orig_save(e, "x");
+				e.attributes.x.value = 10;
+			}
+			if (e.attributes.width != undefined) {
+				orig_save(e, "width");
+				e.attributes.width.value = parseInt(svg.width.baseVal.value) - (10 * 2);
+			}
+		}
+		if (e.childNodes == undefined) return;
+		for (var i = 0, c = e.childNodes; i < c.length; i++) {
+			zoom_parent(c[i]);
+		}
+	}
+	function zoom(node) {
+		var attr = find_child(node, "rect").attributes;
+		var width = parseFloat(attr.width.value);
+		var xmin = parseFloat(attr.x.value);
+		var xmax = parseFloat(xmin + width);
+		var ymin = parseFloat(attr.y.value);
+		var ratio = (svg.width.baseVal.value - 2 * 10) / width;
+
+		// XXX: Workaround for JavaScript float issues (fix me)
+		var fudge = 0.0001;
+
+		unzoombtn.classList.remove("hide");
+
+		var el = document.getElementById("frames").children;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var a = find_child(e, "rect").attributes;
+			var ex = parseFloat(a.x.value);
+			var ew = parseFloat(a.width.value);
+			var upstack;
+			// Is it an ancestor
+			if (0 == 0) {
+				upstack = parseFloat(a.y.value) > ymin;
+			} else {
+				upstack = parseFloat(a.y.value) < ymin;
+			}
+			if (upstack) {
+				// Direct ancestor
+				if (ex <= xmin && (ex+ew+fudge) >= xmax) {
+					e.classList.add("parent");
+					zoom_parent(e);
+					update_text(e);
+				}
+				// not in current path
+				else
+					e.classList.add("hide");
+			}
+			// Children maybe
+			else {
+				// no common path
+				if (ex < xmin || ex + fudge >= xmax) {
+					e.classList.add("hide");
+				}
+				else {
+					zoom_child(e, xmin, ratio);
+					update_text(e);
+				}
+			}
+		}
+		search();
+	}
+	function unzoom(dont_update_text) {
+		unzoombtn.classList.add("hide");
+		var el = document.getElementById("frames").children;
+		for(var i = 0; i < el.length; i++) {
+			el[i].classList.remove("parent");
+			el[i].classList.remove("hide");
+			zoom_reset(el[i]);
+			if(!dont_update_text) update_text(el[i]);
+		}
+		search();
+	}
+	function clearzoom() {
+		unzoom();
+
+		// remove zoom state
+		var params = get_params();
+		if (params.x) delete params.x;
+		if (params.y) delete params.y;
+		history.replaceState(null, null, parse_params(params));
+	}
+
+	// search
+	function toggle_ignorecase() {
+		ignorecase = !ignorecase;
+		if (ignorecase) {
+			ignorecaseBtn.classList.add("show");
+		} else {
+			ignorecaseBtn.classList.remove("show");
+		}
+		reset_search();
+		search();
+	}
+	function reset_search() {
+		var el = document.querySelectorAll("#frames rect");
+		for (var i = 0; i < el.length; i++) {
+			orig_load(el[i], "fill")
+		}
+		var params = get_params();
+		delete params.s;
+		history.replaceState(null, null, parse_params(params));
+	}
+	function search_prompt() {
+		if (!searching) {
+			var term = prompt("Enter a search term (regexp " +
+			    "allowed, eg: ^ext4_)"
+			    + (ignorecase ? ", ignoring case" : "")
+			    + "\nPress Ctrl-i to toggle case sensitivity", "");
+			if (term != null) search(term);
+		} else {
+			reset_search();
+			searching = 0;
+			currentSearchTerm = null;
+			searchbtn.classList.remove("show");
+			searchbtn.firstChild.nodeValue = "Search"
+			matchedtxt.classList.add("hide");
+			matchedtxt.firstChild.nodeValue = ""
+		}
+	}
+	function search(term) {
+		if (term) currentSearchTerm = term;
+		if (currentSearchTerm === null) return;
+
+		var re = new RegExp(currentSearchTerm, ignorecase ? 'i' : '');
+		var el = document.getElementById("frames").children;
+		var matches = new Object();
+		var maxwidth = 0;
+		for (var i = 0; i < el.length; i++) {
+			var e = el[i];
+			var func = g_to_func(e);
+			var rect = find_child(e, "rect");
+			if (func == null || rect == null)
+				continue;
+
+			// Save max width. Only works as we have a root frame
+			var w = parseFloat(rect.attributes.width.value);
+			if (w > maxwidth)
+				maxwidth = w;
+
+			if (func.match(re)) {
+				// highlight
+				var x = parseFloat(rect.attributes.x.value);
+				orig_save(rect, "fill");
+				rect.attributes.fill.value = "rgb(230,0,230)";
+
+				// remember matches
+				if (matches[x] == undefined) {
+					matches[x] = w;
+				} else {
+					if (w > matches[x]) {
+						// overwrite with parent
+						matches[x] = w;
+					}
+				}
+				searching = 1;
+			}
+		}
+		if (!searching)
+			return;
+		var params = get_params();
+		params.s = currentSearchTerm;
+		history.replaceState(null, null, parse_params(params));
+
+		searchbtn.classList.add("show");
+		searchbtn.firstChild.nodeValue = "Reset Search";
+
+		// calculate percent matched, excluding vertical overlap
+		var count = 0;
+		var lastx = -1;
+		var lastw = 0;
+		var keys = Array();
+		for (k in matches) {
+			if (matches.hasOwnProperty(k))
+				keys.push(k);
+		}
+		// sort the matched frames by their x location
+		// ascending, then width descending
+		keys.sort(function(a, b){
+			return a - b;
+		});
+		// Step through frames saving only the biggest bottom-up frames
+		// thanks to the sort order. This relies on the tree property
+		// where children are always smaller than their parents.
+		var fudge = 0.0001;	// JavaScript floating point
+		for (var k in keys) {
+			var x = parseFloat(keys[k]);
+			var w = matches[keys[k]];
+			if (x >= lastx + lastw - fudge) {
+				count += w;
+				lastx = x;
+				lastw = w;
+			}
+		}
+		// display matched percent
+		matchedtxt.classList.remove("hide");
+		var pct = 100 * count / maxwidth;
+		if (pct != 100) pct = pct.toFixed(1)
+		matchedtxt.firstChild.nodeValue = "Matched: " + pct + "%";
+	}
+]]>
+</script>
+<rect x="0.0" y="0" width="1800.0" height="396.0" fill="url(#background)"  />
+<text id="title" x="900.00" y="20" >Flame Graph</text>
+<text id="details" x="10.00" y="381" > </text>
+<text id="unzoom" x="10.00" y="20" class="hide">Reset Zoom</text>
+<text id="search" x="1690.00" y="20" >Search</text>
+<text id="ignorecase" x="1774.00" y="20" >ic</text>
+<text id="matched" x="1690.00" y="381" > </text>
+<g id="frames">
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_S_left (8,038,628,095 samples, 17.47%)</title><rect x="967.9" y="129" width="311.0" height="13.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="970.92" y="138.5" >std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned lo..</text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;2ul, std::pair&lt;unsigned long, unsigned long&gt; &gt;::_Tuple_impl (326,686,493 samples, 0.71%)</title><rect x="1757.6" y="45" width="12.7" height="13.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="1760.64" y="54.5" ></text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt;::construct&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; (162,940,901 samples, 0.35%)</title><rect x="1674.3" y="171" width="6.3" height="13.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1677.30" y="180.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_decrement (169,158,398 samples, 0.37%)</title><rect x="1780.6" y="325" width="6.5" height="13.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="1783.59" y="334.5" ></text>
+</g>
+<g >
+<title>benchmark::internal::(anonymous namespace)::RunInThread (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="255" width="1768.5" height="13.0" fill="rgb(208,15,3)" rx="2" ry="2" />
+<text  x="14.66" y="264.5" >benchmark::internal::(anonymous namespace)::RunInThread</text>
+</g>
+<g >
+<title>std::__rb_tree::_Node_traits&lt;std::pair&lt;unsigned long const, unsigned long&gt;, std::pair&lt;unsigned long const, unsigned long&gt;*&gt;::_S_insert_and_rebalance (355,772,379 samples, 0.77%)</title><rect x="403.7" y="115" width="13.7" height="13.0" fill="rgb(244,179,42)" rx="2" ry="2" />
+<text  x="406.69" y="124.5" ></text>
+</g>
+<g >
+<title>benchmark::internal::BenchmarkInstance::Run (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="241" width="1768.5" height="13.0" fill="rgb(228,110,26)" rx="2" ry="2" />
+<text  x="14.66" y="250.5" >benchmark::internal::BenchmarkInstance::Run</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_begin (1,297,113,593 samples, 2.82%)</title><rect x="123.3" y="157" width="50.2" height="13.0" fill="rgb(210,23,5)" rx="2" ry="2" />
+<text  x="126.29" y="166.5" >std::_..</text>
+</g>
+<g >
+<title>std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::erase[abi:cxx11] (1,091,164,610 samples, 2.37%)</title><rect x="69.8" y="185" width="42.2" height="13.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="72.80" y="194.5" >std::..</text>
+</g>
+<g >
+<title>LimitOrderBook&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::warm_up (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="199" width="8.3" height="13.0" fill="rgb(238,155,37)" rx="2" ry="2" />
+<text  x="1368.42" y="208.5" ></text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt;::construct&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; (1,837,306,832 samples, 3.99%)</title><rect x="1699.2" y="115" width="71.1" height="13.0" fill="rgb(223,84,20)" rx="2" ry="2" />
+<text  x="1702.21" y="124.5" >void std::..</text>
+</g>
+<g >
+<title>_ZSt12construct_atI12FreeListNodeJRPS0_EQaant20is_unbounded_array_vIT_ErqXgsnwcvPvLi0E_S3_pispcl7declvalIT0_EEEEEPS3_S6_DpOS5_ (58,801,295 samples, 0.13%)</title><rect x="1371.4" y="45" width="2.3" height="13.0" fill="rgb(214,41,9)" rx="2" ry="2" />
+<text  x="1374.43" y="54.5" ></text>
+</g>
+<g >
+<title>MemoryPool::pop_ticket (121,913,612 samples, 0.26%)</title><rect x="393.9" y="73" width="4.7" height="13.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="396.88" y="82.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_get_node (197,161,380 samples, 0.43%)</title><rect x="392.8" y="115" width="7.6" height="13.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="395.78" y="124.5" ></text>
+</g>
+<g >
+<title>FreeListAllocator&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::allocate (197,161,380 samples, 0.43%)</title><rect x="392.8" y="87" width="7.6" height="13.0" fill="rgb(236,147,35)" rx="2" ry="2" />
+<text  x="395.78" y="96.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_S_right (366,964,620 samples, 0.80%)</title><rect x="294.3" y="143" width="14.1" height="13.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="297.25" y="152.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;std::vector&lt;int, std::allocator&lt;int&gt; &gt;, std::allocator&lt;std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt; &gt;::operator[] (257,228,242 samples, 0.56%)</title><rect x="1770.3" y="199" width="9.9" height="13.0" fill="rgb(215,46,11)" rx="2" ry="2" />
+<text  x="1773.28" y="208.5" ></text>
+</g>
+<g >
+<title>_ZSt12construct_atISt5tupleIJt4SideSt4pairImmEEEJS4_EQaant20is_unbounded_array_vIT_ErqXgsnwcvPvLi0E_S5_pispcl7declvalIT0_EEEEEPS5_S8_DpOS7_ (1,837,306,832 samples, 3.99%)</title><rect x="1699.2" y="101" width="71.1" height="13.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="1702.21" y="110.5" >_ZSt12cons..</text>
+</g>
+<g >
+<title>benchmark::internal::(anonymous namespace)::RunBenchmarks (45,722,898,384 samples, 99.36%)</title><rect x="11.6" y="325" width="1768.6" height="13.0" fill="rgb(214,43,10)" rx="2" ry="2" />
+<text  x="14.60" y="334.5" >benchmark::internal::(anonymous namespace)::RunBenchmarks</text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;1ul, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;::_Tuple_impl (1,497,952,394 samples, 3.26%)</title><rect x="1712.3" y="59" width="58.0" height="13.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1715.34" y="68.5" >std::_T..</text>
+</g>
+<g >
+<title>local_Rb_tree_rotate_right (28,318,861 samples, 0.06%)</title><rect x="110.5" y="115" width="1.1" height="13.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="113.55" y="124.5" ></text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;2ul, std::pair&lt;unsigned long, unsigned long&gt; &gt;::_Tuple_impl (121,758,207 samples, 0.26%)</title><rect x="1675.9" y="101" width="4.7" height="13.0" fill="rgb(208,14,3)" rx="2" ry="2" />
+<text  x="1678.89" y="110.5" ></text>
+</g>
+<g >
+<title>FreeListAllocator&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::allocate (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="87" width="8.3" height="13.0" fill="rgb(236,147,35)" rx="2" ry="2" />
+<text  x="1368.42" y="96.5" ></text>
+</g>
+<g >
+<title>std::tuple&lt;unsigned long const&amp;&gt; std::forward_as_tuple&lt;unsigned long const&amp;&gt; (37,920,509 samples, 0.08%)</title><rect x="1364.0" y="171" width="1.4" height="13.0" fill="rgb(219,64,15)" rx="2" ry="2" />
+<text  x="1366.96" y="180.5" ></text>
+</g>
+<g >
+<title>std::function&lt;void  (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="269" width="1768.5" height="13.0" fill="rgb(207,13,3)" rx="2" ry="2" />
+<text  x="14.66" y="278.5" >std::function&lt;void </text>
+</g>
+<g >
+<title>void LimitOrderBook&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::modify_level&lt; (33,946,918,768 samples, 73.77%)</title><rect x="52.3" y="199" width="1313.1" height="13.0" fill="rgb(207,12,2)" rx="2" ry="2" />
+<text  x="55.30" y="208.5" >void LimitOrderBook&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::modify_level&lt;</text>
+</g>
+<g >
+<title>LimitOrderBookHandler&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::warmp_up_insert (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="213" width="8.3" height="13.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="1368.42" y="222.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;FreeListAllocator&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; &gt;::deallocate (65,976,913 samples, 0.14%)</title><rect x="69.8" y="115" width="2.6" height="13.0" fill="rgb(251,214,51)" rx="2" ry="2" />
+<text  x="72.80" y="124.5" ></text>
+</g>
+<g >
+<title>std::allocator_traits&lt;FreeListAllocator&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; &gt;::allocate (197,161,380 samples, 0.43%)</title><rect x="392.8" y="101" width="7.6" height="13.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="395.78" y="110.5" ></text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;0ul, unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;::_Tuple_impl (162,940,901 samples, 0.35%)</title><rect x="1674.3" y="129" width="6.3" height="13.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1677.30" y="138.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_emplace_hint_unique&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long&amp;&amp;&gt;, std::tuple&lt;int&amp;&amp;&gt; &gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="157" width="8.3" height="13.0" fill="rgb(217,56,13)" rx="2" ry="2" />
+<text  x="1368.42" y="166.5" ></text>
+</g>
+<g >
+<title>lob_benchmarks (46,016,751,515 samples, 100.00%)</title><rect x="10.0" y="339" width="1780.0" height="13.0" fill="rgb(243,176,42)" rx="2" ry="2" />
+<text  x="13.00" y="348.5" >lob_benchmarks</text>
+</g>
+<g >
+<title>_ZSt12construct_atI12FreeListNodeJRPS0_EQaant20is_unbounded_array_vIT_ErqXgsnwcvPvLi0E_S3_pispcl7declvalIT0_EEEEEPS3_S6_DpOS5_ (56,507,100 samples, 0.12%)</title><rect x="70.2" y="73" width="2.2" height="13.0" fill="rgb(214,41,9)" rx="2" ry="2" />
+<text  x="73.17" y="82.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_insert_and_rebalance (336,966,092 samples, 0.73%)</title><rect x="404.4" y="101" width="13.0" height="13.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="407.41" y="110.5" ></text>
+</g>
+<g >
+<title>int std::uniform_int_distribution&lt;int&gt;::operator (1,613,075,992 samples, 3.51%)</title><rect x="1434.9" y="199" width="62.4" height="13.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="1437.92" y="208.5" >int std:..</text>
+</g>
+<g >
+<title>std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::find (5,078,339,859 samples, 11.04%)</title><rect x="112.0" y="185" width="196.4" height="13.0" fill="rgb(254,225,53)" rx="2" ry="2" />
+<text  x="115.01" y="194.5" >std::map&lt;unsigned long, unsigne..</text>
+</g>
+<g >
+<title>std::mersenne_twister_engine&lt;unsigned long, 64ul, 312ul, 156ul, 31ul, 13043109905998158313ul, 29ul, 6148914691236517205ul, 17ul, 8202884508482404352ul, 37ul, 18444473444759240704ul, 43ul, 6364136223846793005ul&gt;::operator (3,989,577,441 samples, 8.67%)</title><rect x="1497.3" y="199" width="154.3" height="13.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="1500.32" y="208.5" >std::mersenne_twister_en..</text>
+</g>
+<g >
+<title>_ZNSt5tupleIJt4SideSt4pairImmEEEC4EOS3_Qfraa23is_move_constructible_vIT_E (1,837,306,832 samples, 3.99%)</title><rect x="1699.2" y="87" width="71.1" height="13.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1702.21" y="96.5" >_ZNSt5tupl..</text>
+</g>
+<g >
+<title>[unknown] (29,781,024 samples, 0.06%)</title><rect x="10.4" y="325" width="1.2" height="13.0" fill="rgb(210,24,5)" rx="2" ry="2" />
+<text  x="13.44" y="334.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;* MemoryPool::reserve&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; (46,974,487 samples, 0.10%)</title><rect x="398.6" y="73" width="1.8" height="13.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="401.59" y="82.5" ></text>
+</g>
+<g >
+<title>local_Rb_tree_rotate_right (47,022,973 samples, 0.10%)</title><rect x="415.6" y="87" width="1.8" height="13.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="418.63" y="96.5" ></text>
+</g>
+<g >
+<title>_ZSt12construct_atISt5tupleIJt4SideSt4pairImmEEEJS4_EQaant20is_unbounded_array_vIT_ErqXgsnwcvPvLi0E_S5_pispcl7declvalIT0_EEEEEPS5_S8_DpOS7_ (162,940,901 samples, 0.35%)</title><rect x="1674.3" y="157" width="6.3" height="13.0" fill="rgb(239,157,37)" rx="2" ry="2" />
+<text  x="1677.30" y="166.5" ></text>
+</g>
+<g >
+<title>local_Rb_tree_rotate_left (28,184,103 samples, 0.06%)</title><rect x="414.5" y="87" width="1.1" height="13.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="417.54" y="96.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;* std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_create_node&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long&amp;&amp;&gt;, std::tuple&lt;int&amp;&amp;&gt; &gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="129" width="8.3" height="13.0" fill="rgb(235,142,34)" rx="2" ry="2" />
+<text  x="1368.42" y="138.5" ></text>
+</g>
+<g >
+<title>std::tuple&lt;unsigned long const&amp;&gt;::tuple&lt;void&gt; (37,920,509 samples, 0.08%)</title><rect x="1364.0" y="157" width="1.4" height="13.0" fill="rgb(218,61,14)" rx="2" ry="2" />
+<text  x="1366.96" y="166.5" ></text>
+</g>
+<g >
+<title>std::mersenne_twister_engine&lt;unsigned long, 64ul, 312ul, 156ul, 31ul, 13043109905998158313ul, 29ul, 6148914691236517205ul, 17ul, 8202884508482404352ul, 37ul, 18444473444759240704ul, 43ul, 6364136223846793005ul&gt;::_M_gen_rand (2,025,229,593 samples, 4.40%)</title><rect x="1573.3" y="185" width="78.3" height="13.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="1576.30" y="194.5" >std::mersen..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_S_right (2,190,370,267 samples, 4.76%)</title><rect x="1278.9" y="129" width="84.7" height="13.0" fill="rgb(209,22,5)" rx="2" ry="2" />
+<text  x="1281.86" y="138.5" >std::_Rb_tre..</text>
+</g>
+<g >
+<title>void std::allocator_traits&lt;std::allocator&lt;int&gt; &gt;::construct&lt;int, int&gt; (25,099,391 samples, 0.05%)</title><rect x="1658.9" y="171" width="1.0" height="13.0" fill="rgb(249,202,48)" rx="2" ry="2" />
+<text  x="1661.90" y="180.5" ></text>
+</g>
+<g >
+<title>int&amp; std::vector&lt;int, std::allocator&lt;int&gt; &gt;::emplace_back&lt;int&gt; (48,749,805 samples, 0.11%)</title><rect x="1658.0" y="185" width="1.9" height="13.0" fill="rgb(206,7,1)" rx="2" ry="2" />
+<text  x="1660.99" y="194.5" ></text>
+</g>
+<g >
+<title>std::pair&lt;std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, bool&gt; std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::try_emplace&lt;&gt; (27,325,031,673 samples, 59.38%)</title><rect x="308.4" y="185" width="1057.0" height="13.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="311.45" y="194.5" >std::pair&lt;std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, bool&gt; std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::p..</text>
+</g>
+<g >
+<title>void MemoryPool::create_tickets&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="59" width="8.3" height="13.0" fill="rgb(228,108,25)" rx="2" ry="2" />
+<text  x="1368.42" y="68.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_decrement (311,528,188 samples, 0.68%)</title><rect x="423.3" y="115" width="12.0" height="13.0" fill="rgb(238,152,36)" rx="2" ry="2" />
+<text  x="426.27" y="124.5" ></text>
+</g>
+<g >
+<title>local_Rb_tree_decrement (66,181,866 samples, 0.14%)</title><rect x="432.8" y="87" width="2.5" height="13.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="435.77" y="96.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::lower_bound (23,997,622,100 samples, 52.15%)</title><rect x="435.3" y="157" width="928.3" height="13.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="438.33" y="166.5" >std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsi..</text>
+</g>
+<g >
+<title>generate_updates (10,509,485,232 samples, 22.84%)</title><rect x="1373.7" y="213" width="406.5" height="13.0" fill="rgb(207,11,2)" rx="2" ry="2" />
+<text  x="1376.71" y="222.5" >generate_updates</text>
+</g>
+<g >
+<title>MemoryPool::insert_back (56,507,100 samples, 0.12%)</title><rect x="70.2" y="87" width="2.2" height="13.0" fill="rgb(252,218,52)" rx="2" ry="2" />
+<text  x="73.17" y="96.5" ></text>
+</g>
+<g >
+<title>all (46,016,751,515 samples, 100%)</title><rect x="10.0" y="353" width="1780.0" height="13.0" fill="rgb(213,39,9)" rx="2" ry="2" />
+<text  x="13.00" y="362.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_Auto_node::_M_insert (431,031,783 samples, 0.94%)</title><rect x="400.8" y="143" width="16.6" height="13.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="403.77" y="152.5" ></text>
+</g>
+<g >
+<title>bool std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_key_compare&lt;unsigned long, unsigned long&gt; (28,303,258 samples, 0.06%)</title><rect x="420.7" y="129" width="1.1" height="13.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="423.73" y="138.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::erase[abi:cxx11] (1,091,164,610 samples, 2.37%)</title><rect x="69.8" y="171" width="42.2" height="13.0" fill="rgb(239,159,38)" rx="2" ry="2" />
+<text  x="72.80" y="180.5" >std::..</text>
+</g>
+<g >
+<title>std::_Rb_tree_rebalance_for_erase (1,015,761,999 samples, 2.21%)</title><rect x="72.7" y="129" width="39.3" height="13.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="75.72" y="138.5" >std:..</text>
+</g>
+<g >
+<title>int std::uniform_int_distribution&lt;int&gt;::operator (1,613,075,992 samples, 3.51%)</title><rect x="1434.9" y="185" width="62.4" height="13.0" fill="rgb(244,180,43)" rx="2" ry="2" />
+<text  x="1437.92" y="194.5" >int std:..</text>
+</g>
+<g >
+<title>benchmark::internal::BenchmarkRunner::DoOneRepetition (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="311" width="1768.5" height="13.0" fill="rgb(212,33,8)" rx="2" ry="2" />
+<text  x="14.66" y="320.5" >benchmark::internal::BenchmarkRunner::DoOneRepetition</text>
+</g>
+<g >
+<title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::size (72,686,345 samples, 0.16%)</title><rect x="1659.9" y="199" width="2.8" height="13.0" fill="rgb(211,32,7)" rx="2" ry="2" />
+<text  x="1662.87" y="208.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_erase_aux (1,091,164,610 samples, 2.37%)</title><rect x="69.8" y="157" width="42.2" height="13.0" fill="rgb(217,58,13)" rx="2" ry="2" />
+<text  x="72.80" y="166.5" >std::..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_get_node (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="115" width="8.3" height="13.0" fill="rgb(242,174,41)" rx="2" ry="2" />
+<text  x="1368.42" y="124.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;::operator-- (349,117,575 samples, 0.76%)</title><rect x="421.8" y="129" width="13.5" height="13.0" fill="rgb(234,137,32)" rx="2" ry="2" />
+<text  x="424.82" y="138.5" ></text>
+</g>
+<g >
+<title>__gnu_cxx::__normal_iterator&lt;int const*, std::vector&lt;int, std::allocator&lt;int&gt; &gt; &gt;::__normal_iterator (139,161,839 samples, 0.30%)</title><rect x="1652.0" y="171" width="5.4" height="13.0" fill="rgb(241,166,39)" rx="2" ry="2" />
+<text  x="1654.97" y="180.5" ></text>
+</g>
+<g >
+<title>local_Rb_tree_rotate_left (18,760,407 samples, 0.04%)</title><rect x="109.8" y="115" width="0.7" height="13.0" fill="rgb(237,148,35)" rx="2" ry="2" />
+<text  x="112.82" y="124.5" ></text>
+</g>
+<g >
+<title>std::mersenne_twister_engine&lt;unsigned long, 64ul, 312ul, 156ul, 31ul, 13043109905998158313ul, 29ul, 6148914691236517205ul, 17ul, 8202884508482404352ul, 37ul, 18444473444759240704ul, 43ul, 6364136223846793005ul&gt;::operator (1,437,787,133 samples, 3.12%)</title><rect x="1441.7" y="157" width="55.6" height="13.0" fill="rgb(211,30,7)" rx="2" ry="2" />
+<text  x="1444.70" y="166.5" >std::me..</text>
+</g>
+<g >
+<title>std::vector&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt;::push_back (2,781,553,273 samples, 6.04%)</title><rect x="1662.7" y="199" width="107.6" height="13.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1665.68" y="208.5" >std::vector&lt;std:..</text>
+</g>
+<g >
+<title>FreeListNode::FreeListNode (58,801,295 samples, 0.13%)</title><rect x="1371.4" y="31" width="2.3" height="13.0" fill="rgb(215,48,11)" rx="2" ry="2" />
+<text  x="1374.43" y="40.5" ></text>
+</g>
+<g >
+<title>_ZSt12construct_atIiJiEQaant20is_unbounded_array_vIT_ErqXgsnwcvPvLi0E_S0_pispcl7declvalIT0_EEEEEPS0_S3_DpOS2_ (25,099,391 samples, 0.05%)</title><rect x="1658.9" y="157" width="1.0" height="13.0" fill="rgb(205,1,0)" rx="2" ry="2" />
+<text  x="1661.90" y="166.5" ></text>
+</g>
+<g >
+<title>unsigned long std::uniform_int_distribution&lt;int&gt;::_S_nd&lt;unsigned __int128, std::mersenne_twister_engine&lt;unsigned long, 64ul, 312ul, 156ul, 31ul, 13043109905998158313ul, 29ul, 6148914691236517205ul, 17ul, 8202884508482404352ul, 37ul, 18444473444759240704ul, 43ul, 6364136223846793005ul&gt;, unsigned long&gt; (1,613,075,992 samples, 3.51%)</title><rect x="1434.9" y="171" width="62.4" height="13.0" fill="rgb(253,221,53)" rx="2" ry="2" />
+<text  x="1437.92" y="180.5" >unsigned..</text>
+</g>
+<g >
+<title>std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;* std::__relocate_a&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;*, std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;*, std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt; (2,318,428,063 samples, 5.04%)</title><rect x="1680.6" y="157" width="89.7" height="13.0" fill="rgb(229,113,27)" rx="2" ry="2" />
+<text  x="1683.60" y="166.5" >std::tuple&lt;un..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::find (5,078,339,859 samples, 11.04%)</title><rect x="112.0" y="171" width="196.4" height="13.0" fill="rgb(230,118,28)" rx="2" ry="2" />
+<text  x="115.01" y="180.5" >std::_Rb_tree&lt;unsigned long, st..</text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::emplace_hint&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long const&amp;&gt;, std::tuple&lt;&gt; &gt; (1,353,839,481 samples, 2.94%)</title><rect x="383.0" y="171" width="52.3" height="13.0" fill="rgb(220,70,16)" rx="2" ry="2" />
+<text  x="385.96" y="180.5" >std::_..</text>
+</g>
+<g >
+<title>std::__rb_tree::_Node_traits&lt;std::pair&lt;unsigned long const, unsigned long&gt;, std::pair&lt;unsigned long const, unsigned long&gt;*&gt;::_S_rebalance_for_erase (1,025,187,697 samples, 2.23%)</title><rect x="72.4" y="143" width="39.6" height="13.0" fill="rgb(223,87,20)" rx="2" ry="2" />
+<text  x="75.35" y="152.5" >std:..</text>
+</g>
+<g >
+<title>FreeListAllocator&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::deallocate (65,976,913 samples, 0.14%)</title><rect x="69.8" y="101" width="2.6" height="13.0" fill="rgb(238,154,36)" rx="2" ry="2" />
+<text  x="72.80" y="110.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;* MemoryPool::reserve&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="73" width="8.3" height="13.0" fill="rgb(229,114,27)" rx="2" ry="2" />
+<text  x="1368.42" y="82.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_Auto_node::_Auto_node&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long&amp;&amp;&gt;, std::tuple&lt;int&amp;&amp;&gt; &gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="143" width="8.3" height="13.0" fill="rgb(214,42,10)" rx="2" ry="2" />
+<text  x="1368.42" y="152.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_S_left (1,045,126,311 samples, 2.27%)</title><rect x="253.8" y="143" width="40.5" height="13.0" fill="rgb(252,219,52)" rx="2" ry="2" />
+<text  x="256.83" y="152.5" >std:..</text>
+</g>
+<g >
+<title>std::allocator_traits&lt;FreeListAllocator&lt;std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; &gt;::allocate (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="101" width="8.3" height="13.0" fill="rgb(250,207,49)" rx="2" ry="2" />
+<text  x="1368.42" y="110.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_emplace_hint_unique&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long const&amp;&gt;, std::tuple&lt;&gt; &gt; (37,828,776 samples, 0.08%)</title><rect x="1787.1" y="325" width="1.5" height="13.0" fill="rgb(225,95,22)" rx="2" ry="2" />
+<text  x="1790.14" y="334.5" ></text>
+</g>
+<g >
+<title>std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;&amp; std::vector&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt;::emplace_back&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; (2,781,553,273 samples, 6.04%)</title><rect x="1662.7" y="185" width="107.6" height="13.0" fill="rgb(226,99,23)" rx="2" ry="2" />
+<text  x="1665.68" y="194.5" >std::tuple&lt;unsig..</text>
+</g>
+<g >
+<title>std::less&lt;unsigned long&gt;::operator (28,303,258 samples, 0.06%)</title><rect x="420.7" y="115" width="1.1" height="13.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="423.73" y="124.5" ></text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;0ul, unsigned long const&amp;&gt;::_Tuple_impl (37,920,509 samples, 0.08%)</title><rect x="1364.0" y="143" width="1.4" height="13.0" fill="rgb(207,9,2)" rx="2" ry="2" />
+<text  x="1366.96" y="152.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::push_back (48,749,805 samples, 0.11%)</title><rect x="1658.0" y="199" width="1.9" height="13.0" fill="rgb(225,94,22)" rx="2" ry="2" />
+<text  x="1660.99" y="208.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;LimitOrderBook&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;, std::allocator&lt;LimitOrderBook&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt; &gt; &gt;::operator[] (196,886,587 samples, 0.43%)</title><rect x="44.7" y="199" width="7.6" height="13.0" fill="rgb(253,221,52)" rx="2" ry="2" />
+<text  x="47.69" y="208.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_rebalance_for_erase (28,205,050 samples, 0.06%)</title><rect x="1788.6" y="325" width="1.1" height="13.0" fill="rgb(205,2,0)" rx="2" ry="2" />
+<text  x="1791.60" y="334.5" ></text>
+</g>
+<g >
+<title>bool std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_key_compare&lt;unsigned long, unsigned long&gt; (94,024,308 samples, 0.20%)</title><rect x="964.3" y="129" width="3.6" height="13.0" fill="rgb(241,169,40)" rx="2" ry="2" />
+<text  x="967.28" y="138.5" ></text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;0ul, unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;::_Tuple_impl (1,837,306,832 samples, 3.99%)</title><rect x="1699.2" y="73" width="71.1" height="13.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="1702.21" y="82.5" >std::_Tupl..</text>
+</g>
+<g >
+<title>LimitOrderBookHandler&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::update_symbol (34,783,387,793 samples, 75.59%)</title><rect x="19.9" y="213" width="1345.5" height="13.0" fill="rgb(239,156,37)" rx="2" ry="2" />
+<text  x="22.95" y="222.5" >LimitOrderBookHandler&lt;FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::update_symbol</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_put_node (65,976,913 samples, 0.14%)</title><rect x="69.8" y="129" width="2.6" height="13.0" fill="rgb(231,121,29)" rx="2" ry="2" />
+<text  x="72.80" y="138.5" ></text>
+</g>
+<g >
+<title>local_Rb_tree_decrement (245,539,921 samples, 0.53%)</title><rect x="425.8" y="101" width="9.5" height="13.0" fill="rgb(247,193,46)" rx="2" ry="2" />
+<text  x="428.83" y="110.5" ></text>
+</g>
+<g >
+<title>_ZNSt5tupleIJt4SideSt4pairImmEEEC4EOS3_Qfraa23is_move_constructible_vIT_E (162,940,901 samples, 0.35%)</title><rect x="1674.3" y="143" width="6.3" height="13.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1677.30" y="152.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::end (139,161,839 samples, 0.30%)</title><rect x="1652.0" y="185" width="5.4" height="13.0" fill="rgb(214,44,10)" rx="2" ry="2" />
+<text  x="1654.97" y="194.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::emplace_hint&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long&amp;&amp;&gt;, std::tuple&lt;int&amp;&amp;&gt; &gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="171" width="8.3" height="13.0" fill="rgb(211,31,7)" rx="2" ry="2" />
+<text  x="1368.42" y="180.5" ></text>
+</g>
+<g >
+<title>std::mersenne_twister_engine&lt;unsigned long, 64ul, 312ul, 156ul, 31ul, 13043109905998158313ul, 29ul, 6148914691236517205ul, 17ul, 8202884508482404352ul, 37ul, 18444473444759240704ul, 43ul, 6364136223846793005ul&gt;::_M_gen_rand (643,097,941 samples, 1.40%)</title><rect x="1472.4" y="143" width="24.9" height="13.0" fill="rgb(233,132,31)" rx="2" ry="2" />
+<text  x="1475.44" y="152.5" >st..</text>
+</g>
+<g >
+<title>std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_emplace_hint_unique&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long const&amp;&gt;, std::tuple&lt;&gt; &gt; (1,156,265,485 samples, 2.51%)</title><rect x="390.6" y="157" width="44.7" height="13.0" fill="rgb(225,95,22)" rx="2" ry="2" />
+<text  x="393.60" y="166.5" >std::..</text>
+</g>
+<g >
+<title>benchmark::internal::(anonymous namespace)::ThreadRunnerDefault::RunThreads (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="283" width="1768.5" height="13.0" fill="rgb(246,192,46)" rx="2" ry="2" />
+<text  x="14.66" y="292.5" >benchmark::internal::(anonymous namespace)::ThreadRunnerDefault::RunThreads</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_Auto_node::_Auto_node&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long const&amp;&gt;, std::tuple&lt;&gt; &gt; (206,625,625 samples, 0.45%)</title><rect x="392.8" y="143" width="8.0" height="13.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="395.78" y="152.5" ></text>
+</g>
+<g >
+<title>benchmark::internal::BenchmarkRunner::DoNIterations (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="297" width="1768.5" height="13.0" fill="rgb(238,153,36)" rx="2" ry="2" />
+<text  x="14.66" y="306.5" >benchmark::internal::BenchmarkRunner::DoNIterations</text>
+</g>
+<g >
+<title>std::pair&lt;std::_Rb_tree_iterator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, bool&gt; std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::try_emplace&lt;int&gt; (214,119,938 samples, 0.47%)</title><rect x="1365.4" y="185" width="8.3" height="13.0" fill="rgb(251,215,51)" rx="2" ry="2" />
+<text  x="1368.42" y="194.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree_node&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;* std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_create_node&lt;std::piecewise_construct_t const&amp;, std::tuple&lt;unsigned long const&amp;&gt;, std::tuple&lt;&gt; &gt; (206,625,625 samples, 0.45%)</title><rect x="392.8" y="129" width="8.0" height="13.0" fill="rgb(244,181,43)" rx="2" ry="2" />
+<text  x="395.78" y="138.5" ></text>
+</g>
+<g >
+<title>std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::lower_bound (23,997,622,100 samples, 52.15%)</title><rect x="435.3" y="171" width="928.3" height="13.0" fill="rgb(249,203,48)" rx="2" ry="2" />
+<text  x="438.33" y="180.5" >std::map&lt;unsigned long, unsigned long, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::lower_bound</text>
+</g>
+<g >
+<title>void std::vector&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt;::_M_realloc_append&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; (2,318,428,063 samples, 5.04%)</title><rect x="1680.6" y="171" width="89.7" height="13.0" fill="rgb(222,81,19)" rx="2" ry="2" />
+<text  x="1683.60" y="180.5" >void std::vec..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_insert_node (431,031,783 samples, 0.94%)</title><rect x="400.8" y="129" width="16.6" height="13.0" fill="rgb(240,161,38)" rx="2" ry="2" />
+<text  x="403.77" y="138.5" ></text>
+</g>
+<g >
+<title>std::_Head_base&lt;0ul, unsigned long const&amp;, false&gt;::_Head_base (37,920,509 samples, 0.08%)</title><rect x="1364.0" y="129" width="1.4" height="13.0" fill="rgb(248,200,47)" rx="2" ry="2" />
+<text  x="1366.96" y="138.5" ></text>
+</g>
+<g >
+<title>std::_Tuple_impl&lt;1ul, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;::_Tuple_impl (147,176,577 samples, 0.32%)</title><rect x="1674.9" y="115" width="5.7" height="13.0" fill="rgb(210,26,6)" rx="2" ry="2" />
+<text  x="1677.91" y="124.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_get_insert_hint_unique_pos (462,174,380 samples, 1.00%)</title><rect x="417.4" y="143" width="17.9" height="13.0" fill="rgb(231,122,29)" rx="2" ry="2" />
+<text  x="420.45" y="152.5" >s..</text>
+</g>
+<g >
+<title>void std::__relocate_object_a&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;, std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt; (1,837,306,832 samples, 3.99%)</title><rect x="1699.2" y="129" width="71.1" height="13.0" fill="rgb(242,172,41)" rx="2" ry="2" />
+<text  x="1702.21" y="138.5" >void std::..</text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_drop_node (65,976,913 samples, 0.14%)</title><rect x="69.8" y="143" width="2.6" height="13.0" fill="rgb(237,147,35)" rx="2" ry="2" />
+<text  x="72.80" y="152.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_lower_bound (23,997,622,100 samples, 52.15%)</title><rect x="435.3" y="143" width="928.3" height="13.0" fill="rgb(251,213,50)" rx="2" ry="2" />
+<text  x="438.33" y="152.5" >std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsi..</text>
+</g>
+<g >
+<title>std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;* std::__relocate_a_1&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;*, std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt;*, std::allocator&lt;std::tuple&lt;unsigned short, Side, std::pair&lt;unsigned long, unsigned long&gt; &gt; &gt; &gt; (2,318,428,063 samples, 5.04%)</title><rect x="1680.6" y="143" width="89.7" height="13.0" fill="rgb(249,204,48)" rx="2" ry="2" />
+<text  x="1683.60" y="152.5" >std::tuple&lt;un..</text>
+</g>
+<g >
+<title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::empty (147,727,502 samples, 0.32%)</title><rect x="1651.6" y="199" width="5.8" height="13.0" fill="rgb(212,35,8)" rx="2" ry="2" />
+<text  x="1654.64" y="208.5" ></text>
+</g>
+<g >
+<title>std::_Rb_tree&lt;unsigned long, std::pair&lt;unsigned long const, unsigned long&gt;, std::_Select1st&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt;, std::less&lt;unsigned long&gt;, FreeListAllocator&lt;std::pair&lt;unsigned long const, unsigned long&gt; &gt; &gt;::_M_lower_bound (3,489,648,507 samples, 7.58%)</title><rect x="173.5" y="157" width="134.9" height="13.0" fill="rgb(251,213,50)" rx="2" ry="2" />
+<text  x="176.46" y="166.5" >std::_Rb_tree&lt;unsign..</text>
+</g>
+<g >
+<title>std::less&lt;unsigned long&gt;::operator (94,024,308 samples, 0.20%)</title><rect x="964.3" y="115" width="3.6" height="13.0" fill="rgb(234,135,32)" rx="2" ry="2" />
+<text  x="967.28" y="124.5" ></text>
+</g>
+<g >
+<title>std::vector&lt;int, std::allocator&lt;int&gt; &gt;::operator[] (16,335,829 samples, 0.04%)</title><rect x="1657.4" y="199" width="0.6" height="13.0" fill="rgb(226,97,23)" rx="2" ry="2" />
+<text  x="1660.35" y="208.5" ></text>
+</g>
+<g >
+<title>BM_Custom (45,721,166,273 samples, 99.36%)</title><rect x="11.7" y="227" width="1768.5" height="13.0" fill="rgb(224,87,20)" rx="2" ry="2" />
+<text  x="14.66" y="236.5" >BM_Custom</text>
+</g>
+</g>
+</svg>
