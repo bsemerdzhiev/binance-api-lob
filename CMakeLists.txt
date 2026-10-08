@@ -10,8 +10,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 include(CTest)
 
 add_subdirectory("tests")
+add_subdirectory("benchmarks")
 
-add_library(LOBLib STATIC "src/limit-order-book.cpp" "src/json-parser.cpp" "src/limit-order-book-handler.cpp" "src/symbol-repo.cpp" "src/memory-pool.cpp")
+add_library(LOBLib STATIC "src/json-parser.cpp" "src/symbol-repo.cpp" "src/memory-pool.cpp")
 
 target_include_directories(LOBLib PUBLIC "include/")
 

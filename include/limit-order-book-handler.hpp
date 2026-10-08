@@ -1,11 +1,12 @@
 #pragma once
 
+#include "free-list-allocator.hpp"
 #include "limit-order-book.hpp"
 #include "memory-pool.hpp"
 #include "symbol-repo.hpp"
 #include <vector>
 
-class LimitOrderBookHandler {
+template <typename Alloc> class LimitOrderBookHandler {
 public:
   LimitOrderBookHandler();
 
@@ -18,10 +19,24 @@ public:
   void reset();
 
 private:
-  //                                             1M allocations
-  static inline constexpr std::size_t ARENA_SIZE = 1000 * 1000;
+  //                                              10M allocations
+  static inline constexpr std::size_t ARENA_SIZE = 10 * 1000 * 1000;
+
+  static Alloc make_allocator(MemoryPool &pool) {
+    if constexpr (std::constructible_from<Alloc, MemoryPool &>) {
+      return Alloc{pool};
+    } else {
+      return Alloc{};
+    }
+  }
+
   MemoryPool memory_pool_;
-  std::vector<LimitOrderBook> order_books_;
+  Alloc alloc_obj_;
+  std::vector<LimitOrderBook<Alloc>> order_books_;
 };
 
-inline LimitOrderBookHandler order_book_handler;
+// initialized with the custom allocator
+inline LimitOrderBookHandler<FreeListAllocator<std::pair<const Price, Volume>>>
+    order_book_handler;
+
+#include "limit-order-book-handler.tpp"
